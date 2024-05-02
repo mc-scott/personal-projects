@@ -46,6 +46,7 @@ event_venues <- function(artist_url) {
             html_element(xpath = paste0('/html/body/div[2]/div/div/div/article/div/div[', x+1, ']/div/a')) %>% 
             html_attr("title")
         venues <- paste(venues, venue, sep = ", ")
+        venues <- str_sub(venues, 2)
     }
     return(venues)
 }
@@ -62,6 +63,7 @@ event_times <- function(artist_url) {
             html_text2() %>% 
             str_remove("\r ")
         times <- paste(times, event_time, sep = ", ")
+        times <- str_sub(times, 2)
     }
     return(times)
 }
@@ -118,11 +120,49 @@ while (TRUE) {
     x <- x + 1
 }
 
-# make sure it didn't duplicate pages in loop
-timetable <- timetable_df %>% 
-    distinct()
+timetable <- timetable_df %>%
+    # make sure loop didn't duplicate pages
+    distinct() %>% 
+    # create artist key - lower and remove spaces
+    mutate(ArtistKey = str_replace_all(str_to_lower(ArtistName), "[:blank:]", ""))
 
+# create gigs table w/ venues and times in for given artist
+# clean event timetable to get rows for each gig and format to date-time
+fct_gigs <- timetable %>% 
+    select(ArtistKey, ArtistName, EventVenues, EventTimes) %>% 
+    mutate(EventVenues = str_squish(EventVenues)) %>%
+    # simultaneously separate two columns by the same delim
+    separate_longer_delim(c(EventVenues, EventTimes), ", ") %>% 
+    mutate(
+        EventTimes = 
+            case_when(
+                str_detect(str_to_lower(EventTimes), "thursday") ~ 
+                    paste("16/05/2024", str_extract(EventTimes, "([0-9]|0[0-9]|1[0-9]):([0-5][0-9])([AaPp][Mm])")),
+                str_detect(str_to_lower(EventTimes), "friday") ~ 
+                    paste("17/05/2024", str_extract(EventTimes, "([0-9]|0[0-9]|1[0-9]):([0-5][0-9])([AaPp][Mm])")),
+                str_detect(str_to_lower(EventTimes), "saturday") ~ 
+                    paste("16/05/2024", str_extract(EventTimes, "([0-9]|0[0-9]|1[0-9]):([0-5][0-9])([AaPp][Mm])")),
+                EventTimes == "NA" ~ NA_character_
+            ),
+        EventTimes = lubridate::parse_date_time(EventTimes, orders = "dmy HMOp", tz = "Europe/London"),
+        EventVenues = if_else(EventVenues == "NA", NA_character_, EventVenues)
+    )
+
+# create artists table w/ artist info in
+dim_artists <- timetable %>% 
+    select(ArtistKey, ArtistName, ArtistFrom, ArtistBlurb)
+    
 # TODO tidy DF and separate longer by delim
 
-saveRDS(timetable, "timetable.rds")
+saveRDS(fct_gigs, "gigs.rds")
+saveRDS(dim_artists, "artists.rds")
 
+# for python analysis
+write.csv(fct_gigs, "gigs.csv")
+write.csv(dim_artists, "artists.csv")
+
+# # test how many artists aren't matched to spotify playlist
+# # using ArtistKey to join spotify playlist to dim_artists table
+# test_artist_key <- dim_artists %>% 
+#     left_join(spotify, by = "ArtistKey") %>% 
+#     filter(is.na(ArtistID))
