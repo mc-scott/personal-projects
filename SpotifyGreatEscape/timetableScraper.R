@@ -77,7 +77,7 @@ artist_blurb <- function(artist_url) {
 }
 
 # create df with first row using UDFs above
-artist1 <- "https://greatescapefestival.com/artists/abby-sage/"
+artist1 <- "https://greatescapefestival.com/artists/76/"
 
 timetable_df <- tibble(
     ArtistName = artist_name(artist1),
@@ -101,7 +101,7 @@ while (TRUE) {
     
     next_artist <- get_next_artist(artist)
     
-    if (next_artist == "https://greatescapefestival.com/artists/abby-sage/") {
+    if (next_artist == artist1) {
         break
     }
     
@@ -128,7 +128,7 @@ timetable <- timetable_df %>%
 
 # create gigs table w/ venues and times in for given artist
 # clean event timetable to get rows for each gig and format to date-time
-fct_gigs <- timetable %>% 
+gigs <- timetable %>% 
     select(ArtistKey, ArtistName, EventVenues, EventTimes) %>% 
     mutate(EventVenues = str_squish(EventVenues)) %>%
     # simultaneously separate two columns by the same delim
@@ -136,12 +136,14 @@ fct_gigs <- timetable %>%
     mutate(
         EventTimes = 
             case_when(
+                str_detect(str_to_lower(EventTimes), "wednesday") ~
+                    paste("14/05/2025", str_extract(EventTimes, "([0-9]|0[0-9]|1[0-9]):([0-5][0-9])([AaPp][Mm])")),
                 str_detect(str_to_lower(EventTimes), "thursday") ~ 
-                    paste("16/05/2024", str_extract(EventTimes, "([0-9]|0[0-9]|1[0-9]):([0-5][0-9])([AaPp][Mm])")),
+                    paste("15/05/2025", str_extract(EventTimes, "([0-9]|0[0-9]|1[0-9]):([0-5][0-9])([AaPp][Mm])")),
                 str_detect(str_to_lower(EventTimes), "friday") ~ 
-                    paste("17/05/2024", str_extract(EventTimes, "([0-9]|0[0-9]|1[0-9]):([0-5][0-9])([AaPp][Mm])")),
+                    paste("16/05/2025", str_extract(EventTimes, "([0-9]|0[0-9]|1[0-9]):([0-5][0-9])([AaPp][Mm])")),
                 str_detect(str_to_lower(EventTimes), "saturday") ~ 
-                    paste("16/05/2024", str_extract(EventTimes, "([0-9]|0[0-9]|1[0-9]):([0-5][0-9])([AaPp][Mm])")),
+                    paste("17/05/2025", str_extract(EventTimes, "([0-9]|0[0-9]|1[0-9]):([0-5][0-9])([AaPp][Mm])")),
                 EventTimes == "NA" ~ NA_character_
             ),
         EventTimes = lubridate::parse_date_time(EventTimes, orders = "dmy HMOp", tz = "Europe/London"),
@@ -149,17 +151,18 @@ fct_gigs <- timetable %>%
     )
 
 # create artists table w/ artist info in
-dim_artists <- timetable %>% 
+artists <- timetable %>% 
     select(ArtistKey, ArtistName, ArtistFrom, ArtistBlurb)
     
 # TODO tidy DF and separate longer by delim
 
-saveRDS(fct_gigs, "gigs.rds")
-saveRDS(dim_artists, "artists.rds")
-
-# for python analysis
-write.csv(fct_gigs, "gigs.csv")
-write.csv(dim_artists, "artists.csv")
+saveRDS(gigs, "gigs.rds")
+saveRDS(artists, "artists.rds")
+saveRDS(timetable_df, "timetable.rds")
+# and save as csv
+write.csv(artists, "artists.csv")
+write.csv(gigs, "gigs.csv")
+write.csv(timetable_df, "timetable.csv")
 
 # # test how many artists aren't matched to spotify playlist
 # # using ArtistKey to join spotify playlist to dim_artists table
