@@ -54,7 +54,7 @@ my_songs <-
 ge_res <- get_spotify_details(playlist_id = ge_playlist_id)
 
 # coerce into data frame
-ge_playlist2 <- 
+ge_playlist <- 
     ge_res$items |> 
     map_df( function(i){
         tibble(
@@ -112,11 +112,9 @@ ge_playlist <-
 
 fact_playlist <-
     ge_playlist |> 
-    select(id, added_at)
+    select(id, added_at, track_id)
 
 # artist details ----
-
-# TODO finish writing map_df call
 
 dim_artists <-
     ge_playlist |> 
@@ -128,48 +126,40 @@ dim_artists <-
              .keep_all = TRUE)
 
 # get additional artist details
-dim_artists |> 
-    head(10) |> 
+artist_details <- 
+    dim_artists |> 
     pull(artist_ids) |> 
     map_df(.progress = TRUE, function(artist_ids){
-        artist_details <- 
-            get_spotify_details(url_string = paste0("https://api.spotify.com/v1/artists/", artist_ids)) |> 
-            map_df(~(tibble(
-                    artist_id = .$id,
-                    popularity = .$popularity,
-                    followers = .$followers$total,
-                    genres = if_else(length(.$genres) == 0, 
-                                     "None", 
-                                     str_c(.$genres, collapse = ", "))
-            )))
+        x <- get_spotify_details(url_string = paste0("https://api.spotify.com/v1/artists/", artist_ids))
+        x <- tibble(
+                artist_id = x$id,
+                popularity = x$popularity,
+                followers = x$followers$total,
+                genres = if_else(length(x$genres) == 0, 
+                                 "None", 
+                                 str_c(x$genres, collapse = ", ")))
     })
 
+dim_artists <- 
+    dim_artists |> 
+    inner_join(artist_details,
+               by = c("artist_ids" = "artist_id"))
 
-dim_artists |> 
-    head(10) |> 
-    pull(artist_ids) |> 
-    map_df(.progress = TRUE, function(artist_ids){
-        get_spotify_details(url_string = paste0("https://api.spotify.com/v1/artists/", artist_ids)) |> 
-            map(~{tibble(artist_id = .$id)})
-    })
-
-# test ~~~~        
-x <- get_spotify_details(url_string = paste0("https://api.spotify.com/v1/artists/", "1WNmfSqydnt1FDJKg3l6lw"))
-    
-y <- tibble(artist_id = x$id,
-            popularity = x$popularity,
-            followers = x$followers$total,
-            genres = if_else(length(x$genres) == 0, 
-                             "None", 
-                             str_c(x$genres, collapse = ", ")))
-# end test ~~~~
+rm(artist_details)
 
 # TODO get track details using audio-features API:
 # https://developer.spotify.com/documentation/web-api/reference/get-audio-features
 
-# TODO save fact_playlist, dim_tracks, dim_artists, my_tracks instead of flat playlist df
+dim_tracks <-
+    ge_playlist |> 
+    select(id, track_id, track_name, track_popularity)
 
-saveRDS(GE_dataframe, "GE_playlist.rds")
-# for python clustering analysis:
-write.csv(GE_dataframe, "GE_playlist.csv")
-
+# save files ----
+c("fact_playlist",
+  "dim_artists",
+  "dim_tracks",
+  "my_songs") |> 
+    walk(.progress = TRUE, function(x){
+        saveRDS(get(x), paste0(x, ".rds"))
+        write.csv(get(x), paste0(x, ".csv"))
+})
