@@ -6,6 +6,14 @@ library(tidyverse)
 client_id <- yaml.load_file("credentials.yml")$client_id
 client_secret <- yaml.load_file("credentials.yml")$client_secret
 
+create_key <- function(col){
+    key <- col |> 
+        str_to_upper() |> 
+        str_replace_all("[:space:]", "") |> 
+        str_replace_all("[:punct:]", "") |> 
+        str_conv("UTF8")
+}
+
 # get token udf ----
 token <- function(){
     # get barer token
@@ -40,13 +48,17 @@ ge_playlist_id <- "7pskSMBb1Hes8SEM01DGX4" # Great Escape 2025
 saved_playlist_id <- "6txLMueNiknIvDCnJFV4np" # my Great Escape Bangers 2025
 
 # get my saved songs ----
-my_songs <- 
+my_artists <- 
     get_spotify_details(playlist_id = saved_playlist_id)$items |> 
     map_df( function(i){
         tibble(
             track_name = i$track$name,
-            track_id = i$track$id)
-    })
+            track_id = i$track$id,
+            artists = paste(map_chr(i$track$artists, pluck, "name"), collapse = ", ")
+            )
+    }) |> 
+    separate_longer_delim(artists, ", ") |> 
+    mutate(artist_key = create_key(artists))
 
 # get GE playlist songs ----
 
@@ -95,8 +107,7 @@ while (TRUE) {
     ge_playlist <- 
         ge_playlist |> 
         add_row(temp_df)
-    # don't spam the API
-    Sys.sleep(0.1)
+
     # get next endpoint
     next_res <- this_res$`next`
     print(next_res)
@@ -159,7 +170,7 @@ c("fact_playlist",
   "dim_artists",
   "dim_tracks",
   "my_songs") |> 
-    walk(.progress = TRUE, function(x){
+    walk(.progress = "saving files", function(x){
         saveRDS(get(x), paste0(x, ".rds"))
-        write.csv(get(x), paste0(x, ".csv"))
+        write.csv(get(x), paste0(x, ".csv"), row.names = FALSE)
 })
