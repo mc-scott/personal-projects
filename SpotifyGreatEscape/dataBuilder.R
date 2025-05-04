@@ -48,7 +48,7 @@ ge_playlist_id <- "7pskSMBb1Hes8SEM01DGX4" # Great Escape 2025
 saved_playlist_id <- "6txLMueNiknIvDCnJFV4np" # my Great Escape Bangers 2025
 
 # get my saved songs ----
-my_artists <- 
+my_songs <- 
     get_spotify_details(playlist_id = saved_playlist_id)$items |> 
     map_df( function(i){
         tibble(
@@ -114,22 +114,23 @@ while (TRUE) {
 
 }
 
-# remove duplicates from playlist & add ID col
+# remove duplicates from playlist
 ge_playlist <-
     ge_playlist |> 
-    distinct(track_id, artist_ids, album_name,
-             .keep_all = TRUE) |> 
-    mutate(id = row_number())
+    distinct(track_id, artist_ids,
+             .keep_all = TRUE)
 
-fact_playlist <-
+spotify_playlist_tracks <-
     ge_playlist |> 
-    select(id, added_at, track_id)
+    select(track_id, added_at, track_name, track_popularity) |> 
+    mutate(track_key = create_key(track_name))
 
 # artist details ----
 
-dim_artists <-
+spotify_artists <-
     ge_playlist |> 
-    select(id, artist_names, artist_ids) |> 
+    select(track_id, artist_ids, artist_names) |> 
+    mutate(artist_key = create_key(artist_names)) |> 
     separate_longer_delim(
         cols = c(artist_names, artist_ids),
         delim = ", ") |> 
@@ -138,7 +139,7 @@ dim_artists <-
 
 # get additional artist details
 artist_details <- 
-    dim_artists |> 
+    spotify_artists |> 
     pull(artist_ids) |> 
     map_df(.progress = TRUE, function(artist_ids){
         x <- get_spotify_details(url_string = paste0("https://api.spotify.com/v1/artists/", artist_ids))
@@ -151,26 +152,30 @@ artist_details <-
                                  str_c(x$genres, collapse = ", ")))
     })
 
-dim_artists <- 
-    dim_artists |> 
+spotify_artists <- 
+    spotify_artists |> 
     inner_join(artist_details,
                by = c("artist_ids" = "artist_id"))
+
+spotify_genres <- 
+    spotify_artists |> 
+    select(artist_ids, genres) |> 
+    separate_longer_delim(genres, ", ") |> 
+    mutate(genres = genres |> 
+               str_squish() |> 
+               str_to_sentence())
 
 rm(artist_details)
 
 # TODO get track details using audio-features API:
 # https://developer.spotify.com/documentation/web-api/reference/get-audio-features
 
-dim_tracks <-
-    ge_playlist |> 
-    select(id, track_id, track_name, track_popularity)
-
 # save files ----
-c("fact_playlist",
-  "dim_artists",
-  "dim_tracks",
+c("spotify_playlist_tracks",
+  "spotify_artists",
+  "spotify_genres",
   "my_songs") |> 
     walk(.progress = "saving files", function(x){
-        saveRDS(get(x), paste0(x, ".rds"))
-        write.csv(get(x), paste0(x, ".csv"), row.names = FALSE)
+        saveRDS(get(x), paste0("SpotifyGreatEscape/Data/RDS/", x, ".rds"))
+        write.csv(get(x), paste0("SpotifyGreatEscape/Data/CSV/", x, ".csv"), row.names = FALSE)
 })
