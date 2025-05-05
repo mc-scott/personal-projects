@@ -54,10 +54,11 @@ my_songs <-
         tibble(
             track_name = i$track$name,
             track_id = i$track$id,
-            artists = paste(map_chr(i$track$artists, pluck, "name"), collapse = ", ")
+            artists = paste(map_chr(i$track$artists, pluck, "name"), collapse = ", "),
+            artist_ids = paste(map_chr(i$track$artists, pluck, "id"), collapse = ", ")
             )
     }) |> 
-    separate_longer_delim(artists, ", ") |> 
+    separate_longer_delim(c(artists, artist_ids), ", ") |> 
     mutate(artist_key = create_key(artists))
 
 # get GE playlist songs ----
@@ -122,8 +123,7 @@ ge_playlist <-
 
 spotify_playlist_tracks <-
     ge_playlist |> 
-    select(track_id, added_at, track_name, track_popularity) |> 
-    mutate(track_key = create_key(track_name))
+    select(track_id, added_at)
 
 # artist details ----
 
@@ -167,6 +167,22 @@ spotify_genres <-
 
 rm(artist_details)
 
+# search spotify by artist name
+
+artist_details <- x <- readRDS("SpotifyGreatEscape/artists.rds") |> 
+    mutate(artist_encode = utils::URLencode(ge_artist)) |> 
+    pull(artist_encode) |> 
+    map_df(.progress = TRUE, function(i){
+        x <- get_spotify_details(url_string = str_glue("https://api.spotify.com/v1/search?q=", i, "&type=artist&limit=1"))$artists$items
+        x <- tibble(artist_id = pluck(x, 1, "id"),
+                    artist_name = pluck(x, 1, "name"),
+                    popularity = pluck(x, 1, "popularity"),
+                    followers = pluck(x, 1, "followers", "total"),
+                    genres = if_else(length(pluck(x, 1, "genres")) == 0, 
+                                     "None", 
+                                     str_c(pluck(x, 1, "genres"), collapse = ", ")))
+    })
+    
 # TODO get track details using audio-features API:
 # https://developer.spotify.com/documentation/web-api/reference/get-audio-features
 
